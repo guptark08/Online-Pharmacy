@@ -1,0 +1,114 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /var/lib/promtail/positions.yml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: auth-service
+    pipeline_stages:
+      - multiline:
+          firstline: '^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}'
+          max_wait_time: 3s
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: pharmacy
+          service: auth-service
+          __path__: /var/log/pharmacy/auth-service/*.log
+
+  - job_name: catalog-service
+    pipeline_stages:
+      - multiline:
+          firstline: '^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}'
+          max_wait_time: 3s
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: pharmacy
+          service: catalog-service
+          __path__: /var/log/pharmacy/catalog-service/*.log
+
+  - job_name: order-service
+    pipeline_stages:
+      - multiline:
+          firstline: '^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}'
+          max_wait_time: 3s
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: pharmacy
+          service: order-service
+          __path__: /var/log/pharmacy/order-service/*.log
+
+  - job_name: admin-service
+    pipeline_stages:
+      - multiline:
+          firstline: '^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}'
+          max_wait_time: 3s
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: pharmacy
+          service: admin-service
+          __path__: /var/log/pharmacy/admin-service/*.log
+
+  - job_name: gateway
+    pipeline_stages:
+      - multiline:
+          firstline: '^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}'
+          max_wait_time: 3s
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: pharmacy
+          service: gateway
+          __path__: /var/log/pharmacy/gateway/*.log
+
+  - job_name: config-server
+    pipeline_stages:
+      - multiline:
+          firstline: '^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}'
+          max_wait_time: 3s
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: pharmacy
+          service: config-server
+          __path__: /var/log/pharmacy/config-server/*.log
+
+  - job_name: eureka
+    pipeline_stages:
+      - multiline:
+          firstline: '^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}'
+          max_wait_time: 3s
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: pharmacy
+          service: eureka
+          __path__: /var/log/pharmacy/eureka/*.log
+
+  - job_name: zipkin
+    pipeline_stages:
+      - multiline:
+          firstline: '^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}'
+          max_wait_time: 3s
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: pharmacy
+          service: zipkin
+          __path__: /var/log/pharmacy/zipkin/*.log

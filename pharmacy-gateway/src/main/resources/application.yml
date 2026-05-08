@@ -1,0 +1,102 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: pharmacy-gateway
+  config:
+    import: optional:configserver:http://pharmacy-config-server:8888
+  cloud:
+    compatibility-verifier:
+      enabled: false
+    gateway:
+      globalcors:
+        corsConfigurations:
+          "[/**]":
+            allowedOrigins: "*"
+            allowedMethods: "*"
+            allowedHeaders: "*"
+      routes:
+        - id: auth-service-api
+          uri: lb://pharmacy-auth
+          predicates:
+            - Path=/api/auth/**
+
+        - id: catalog-service-api
+          uri: lb://pharmacy-catalog
+          predicates:
+            - Path=/api/catalog/**
+
+        - id: order-service-api
+          uri: lb://pharmacy-order
+          predicates:
+            - Path=/api/orders/**
+
+        - id: admin-users-api
+          uri: lb://pharmacy-auth
+          predicates:
+            - Path=/api/admin/users/**
+
+        - id: admin-service-api
+          uri: lb://pharmacy-admin
+          predicates:
+            - Path=/api/admin/**
+
+        - id: auth-service-docs
+          uri: lb://pharmacy-auth
+          predicates:
+            - Path=/v3/api-docs/auth
+          filters:
+            - SetPath=/v3/api-docs
+
+        - id: catalog-service-docs
+          uri: lb://pharmacy-catalog
+          predicates:
+            - Path=/v3/api-docs/catalog
+          filters:
+            - SetPath=/v3/api-docs
+
+        - id: order-service-docs
+          uri: lb://pharmacy-order
+          predicates:
+            - Path=/v3/api-docs/order
+          filters:
+            - SetPath=/v3/api-docs
+
+        - id: admin-service-docs
+          uri: lb://pharmacy-admin
+          predicates:
+            - Path=/v3/api-docs/admin
+          filters:
+            - SetPath=/v3/api-docs
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://pharmacy-eureka:8761/eureka
+
+jwt:
+  secret: cGhhcm1hY3ktc3VwZXItc2VjcmV0LWtleS0yMDI0LXNwcmluZy1ib290LWp3dA==
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    disable-swagger-default-url: true
+    persistAuthorization: true
+    urls-primary-name: auth-service
+    urls:
+      - name: auth-service
+        url: /v3/api-docs/auth
+      - name: catalog-service
+        url: /v3/api-docs/catalog
+      - name: order-service
+        url: /v3/api-docs/order
+      - name: admin-service
+        url: /v3/api-docs/admin
+
+openapi:
+  title: Pharmacy Gateway API
+  version: 1.0.0
+  description: Centralized gateway for all pharmacy services

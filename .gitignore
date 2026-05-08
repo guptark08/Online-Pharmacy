@@ -1,0 +1,35 @@
+# Uploads (prescription files)
+uploads/
+
+# IDE files
+.idea/
+*.iml
+.vscode/
+.metadata/
+
+# Java / Maven build artifacts
+*/target/
+*.class
+*.jar
+*.war
+
+# Node / frontend
+node_modules/
+dist/
+build/
+
+# Environment files
+.env
+!.env.example
+
+# Logs
+*.log
+logs/
+observability/logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Docker
+.docker/

@@ -1,0 +1,388 @@
+services:
+
+  mysql:
+    image: mysql:8.0
+    container_name: pharmacy-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: pharmacy_auth_db
+    ports:
+      - "${MYSQL_PORT:-3307}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - pharmacy-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: pharmacy-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - pharmacy-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  zipkin-db-init:
+    image: mysql:8.0
+    container_name: pharmacy-zipkin-db-init
+    depends_on:
+      mysql:
+        condition: service_healthy
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - >
+        mysql -hmysql -uroot -proot -e "CREATE DATABASE IF NOT EXISTS zipkin;
+        CREATE USER IF NOT EXISTS 'zipkin'@'%' IDENTIFIED BY 'zipkin';
+        GRANT ALL PRIVILEGES ON zipkin.* TO 'zipkin'@'%';
+        FLUSH PRIVILEGES;" &&
+        if [ "$(mysql -hmysql -uzipkin -pzipkin -Nse "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='zipkin' AND table_name='zipkin_spans';")" -eq 0 ];
+        then
+        mysql -hmysql -uzipkin -pzipkin zipkin < /schema/zipkin-schema.sql;
+        else
+        echo "Zipkin schema already present";
+        fi
+    volumes:
+      - ./zipkin-schema.sql:/schema/zipkin-schema.sql:ro
+    networks:
+      - pharmacy-network
+    restart: "no"
+
+  zipkin:
+    image: openzipkin/zipkin:3.6.0
+    container_name: pharmacy-zipkin
+    environment:
+      STORAGE_TYPE: mysql
+      MYSQL_HOST: mysql
+      MYSQL_TCP_PORT: 3306
+      MYSQL_DB: zipkin
+      MYSQL_USER: zipkin
+      MYSQL_PASS: zipkin
+      MYSQL_USE_SSL: "false"
+      JAVA_OPTS: -Xms128m -Xmx128m -XX:+ExitOnOutOfMemoryError -Dlogging.file.name=/zipkin/logs/zipkin.log
+    ports:
+      - "9411:9411"
+    volumes:
+      - ./observability/logs/zipkin:/zipkin/logs
+    depends_on:
+      mysql:
+        condition: service_healthy
+      zipkin-db-init:
+        condition: service_completed_successfully
+    networks:
+      - pharmacy-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9411/health >/dev/null 2>&1"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 45s
+
+  loki:
+    image: grafana/loki:2.9.8
+    container_name: pharmacy-loki
+    profiles: ["observability"]
+    command: -config.file=/etc/loki/loki-config.yml
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./observability/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki_data:/loki
+    networks:
+      - pharmacy-network
+
+  promtail:
+    image: grafana/promtail:2.9.8
+    container_name: pharmacy-promtail
+    profiles: ["observability"]
+    command: -config.file=/etc/promtail/promtail-config.yml
+    volumes:
+      - ./observability/promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      - ./observability/logs:/var/log/pharmacy
+      - promtail_positions:/var/lib/promtail
+    depends_on:
+      - loki
+    networks:
+      - pharmacy-network
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: pharmacy-grafana
+    profiles: ["observability"]
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin123
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./observability/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - loki
+    networks:
+      - pharmacy-network
+
+  sonarqube-db:
+    image: postgres:15
+    container_name: pharmacy-sonarqube-db
+    profiles: ["quality"]
+    environment:
+      POSTGRES_USER: sonar
+      POSTGRES_PASSWORD: sonar
+      POSTGRES_DB: sonarqube
+    volumes:
+      - sonarqube_dbdata:/var/lib/postgresql/data
+    networks:
+      - pharmacy-network
+
+  sonarqube:
+    image: sonarqube:lts
+    container_name: pharmacy-sonarqube
+    profiles: ["quality"]
+    ports:
+      - "9000:9000"
+    environment:
+      SONAR_JDBC_URL: jdbc:postgresql://sonarqube-db:5432/sonarqube
+      SONAR_JDBC_USERNAME: sonar
+      SONAR_JDBC_PASSWORD: sonar
+    depends_on:
+      - sonarqube-db
+    networks:
+      - pharmacy-network
+
+  eureka:
+    build:
+      context: ./pharmacy-eureka
+      dockerfile: Dockerfile
+    image: pharmacy-eureka:latest
+    container_name: pharmacy-eureka
+    environment:
+      LOGGING_FILE_NAME: /app/logs/pharmacy-eureka.log
+    ports:
+      - "8761:8761"
+    volumes:
+      - ./observability/logs/eureka:/app/logs
+    depends_on:
+      mysql:
+        condition: service_started
+      rabbitmq:
+        condition: service_started
+    networks:
+      - pharmacy-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8761/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+
+  config-server:
+    build:
+      context: ./pharmacy-config-server
+      dockerfile: Dockerfile
+    image: pharmacy-config-server:latest
+    container_name: pharmacy-config-server
+    ports:
+      - "8888:8888"
+    environment:
+      SPRING_CLOUD_CONFIG_SERVER_NATIVE_SEARCH_LOCATIONS: file:./config,classpath:/config
+      LOGGING_FILE_NAME: /app/logs/pharmacy-config-server.log
+    volumes:
+      - ./pharmacy-config-server/src/main/resources/config:/app/config
+      - ./observability/logs/config-server:/app/logs
+    depends_on:
+      eureka:
+        condition: service_healthy
+    networks:
+      - pharmacy-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8888/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+
+  auth-service:
+    build:
+      context: ./pharmacy-auth
+      dockerfile: Dockerfile
+    image: pharmacy-auth:latest
+    container_name: pharmacy-auth
+    environment:
+      LOGGING_FILE_NAME: /app/logs/pharmacy-auth.log
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./observability/logs/auth-service:/app/logs
+    depends_on:
+      config-server:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      zipkin:
+        condition: service_healthy
+    networks:
+      - pharmacy-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
+
+  catalog-service:
+    build:
+      context: ./CatalogService
+      dockerfile: Dockerfile
+    image: pharmacy-catalog:latest
+    container_name: pharmacy-catalog
+    environment:
+      LOGGING_FILE_NAME: /app/logs/pharmacy-catalog.log
+    ports:
+      - "8082:8082"
+    volumes:
+      - ./uploads:/app/uploads
+      - ./observability/logs/catalog-service:/app/logs
+    depends_on:
+      config-server:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      zipkin:
+        condition: service_healthy
+    networks:
+      - pharmacy-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
+    restart: on-failure
+
+  order-service:
+    build:
+      context: ./pharmacy-order
+      dockerfile: Dockerfile
+    image: pharmacy-order:latest
+    container_name: pharmacy-order
+    environment:
+      LOGGING_FILE_NAME: /app/logs/pharmacy-order.log
+    ports:
+      - "8083:8083"
+    volumes:
+      - ./observability/logs/order-service:/app/logs
+    depends_on:
+      config-server:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      zipkin:
+        condition: service_healthy
+    networks:
+      - pharmacy-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8083/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
+
+  admin-service:
+    build:
+      context: ./pharmacy-admin
+      dockerfile: Dockerfile
+    image: pharmacy-admin:latest
+    container_name: pharmacy-admin
+    environment:
+      LOGGING_FILE_NAME: /app/logs/pharmacy-admin.log
+    ports:
+      - "8084:8084"
+    volumes:
+      - ./observability/logs/admin-service:/app/logs
+    depends_on:
+      config-server:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      zipkin:
+        condition: service_healthy
+    networks:
+      - pharmacy-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8084/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
+
+  gateway:
+    build:
+      context: ./pharmacy-gateway
+      dockerfile: Dockerfile
+    image: pharmacy-gateway:latest
+    container_name: pharmacy-gateway
+    environment:
+      LOGGING_FILE_NAME: /app/logs/pharmacy-gateway.log
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./observability/logs/gateway:/app/logs
+    depends_on:
+      config-server:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+      catalog-service:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+      admin-service:
+        condition: service_healthy
+      zipkin:
+        condition: service_healthy
+    networks:
+      - pharmacy-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
+    restart: on-failure
+
+volumes:
+  mysql_data:
+  sonarqube_dbdata:
+  loki_data:
+  grafana_data:
+  promtail_positions:
+
+networks:
+  pharmacy-network:
+    driver: bridge
