@@ -1,26 +1,27 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { ADMIN_NAV_LINKS } from "../utils/constants";
 
-export default function AdminLayout() {
+const links = [
+  { to: "/app/admin/dashboard", label: "Dashboard" },
+  { to: "/app/admin/medicines", label: "Medicines" },
+  { to: "/app/admin/orders", label: "Orders" },
+  { to: "/app/admin/users", label: "Users" },
+  { to: "/app/admin/reports", label: "Reports" },
+];
+
+export function AdminLayout() {
   return (
-    <section className="dashboard-shell">
-      <aside className="dashboard-shell__sidebar">
-        <p className="eyebrow">Admin Console</p>
-        <h2>Operations center</h2>
-        <p>Review prescriptions first, then manage orders, users, and reports.</p>
-
-        <nav className="sidebar-nav">
-          {ADMIN_NAV_LINKS.map((link) => (
-            <NavLink key={link.to} to={link.to}>
-              {link.label}
-            </NavLink>
-          ))}
-        </nav>
+    <div className="split-layout">
+      <aside className="side-nav">
+        <h2>Admin</h2>
+        {links.map((link) => (
+          <NavLink key={link.to} to={link.to}>
+            {link.label}
+          </NavLink>
+        ))}
       </aside>
-
-      <div className="dashboard-shell__content">
+      <section className="split-content">
         <Outlet />
-      </div>
-    </section>
+      </section>
+    </div>
   );
 }

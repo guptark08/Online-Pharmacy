@@ -5,7 +5,7 @@ spring:
   application:
     name: pharmacy-admin
   datasource:
-    url: jdbc:mysql://mysql:3306/pharmacy_admin_db
+    url: jdbc:mysql://mysql:3306/pharmacy_catalog_db
     username: pharmacy
     password: pharmacy
     driver-class-name: com.mysql.cj.jdbc.Driver

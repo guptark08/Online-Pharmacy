@@ -4,11 +4,13 @@ import com.pharmacy.admin.dto.OrderStatusRequest;
 import com.pharmacy.admin.dto.OrderSummaryDTO;
 import com.pharmacy.admin.enums.OrderStatus;
 import com.pharmacy.admin.entity.Prescription;
+import com.pharmacy.admin.enums.PrescriptionStatus;
 import com.pharmacy.admin.repository.PrescriptionRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.sql.*;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -73,6 +75,7 @@ public class AdminOrderService {
             updatePs.setString(1, request.getStatus());
             updatePs.setLong(2, orderId);
             updatePs.executeUpdate();
+            syncPrescriptionReview(orderId, OrderStatus.valueOf(request.getStatus()));
 
             // Fetch updated order
             selectPs.setLong(1, orderId);
@@ -126,6 +129,28 @@ public class AdminOrderService {
             order.setPrescriptionFileName(value.getFileName());
             order.setPrescriptionFileType(value.getFileType());
             order.setPrescriptionStatus(value.getStatus());
+        });
+    }
+
+    private void syncPrescriptionReview(Long orderId, OrderStatus orderStatus) {
+        if (orderStatus != OrderStatus.PRESCRIPTION_APPROVED &&
+            orderStatus != OrderStatus.PRESCRIPTION_REJECTED) {
+            return;
+        }
+
+        PrescriptionStatus prescriptionStatus =
+            orderStatus == OrderStatus.PRESCRIPTION_APPROVED ?
+                PrescriptionStatus.APPROVED :
+                PrescriptionStatus.REJECTED;
+
+        prescriptionRepository.findByOrderId(orderId).ifPresent(prescription -> {
+            prescription.setStatus(prescriptionStatus);
+            prescription.setReviewedAt(LocalDateTime.now());
+            prescription.setReviewNote(
+                prescriptionStatus == PrescriptionStatus.APPROVED ?
+                    "Approved from admin order review." :
+                    "Rejected from admin order review.");
+            prescriptionRepository.save(prescription);
         });
     }
 }

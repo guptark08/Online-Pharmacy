@@ -1,28 +1,30 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { ACCOUNT_NAV_LINKS } from "../utils/constants";
+import { useAuthStore } from "../store/auth-store.js";
 
-export default function AccountLayout() {
+const links = [
+  { to: "/app/account/profile", label: "Profile" },
+  { to: "/app/account/prescriptions", label: "Prescriptions" },
+  { to: "/app/account/orders", label: "Orders" },
+  { to: "/app/account/checkout", label: "Checkout" },
+];
+
+export function AccountLayout() {
+  const user = useAuthStore((state) => state.user);
+  const visibleLinks = user?.role === "ADMIN" ? links.filter((link) => link.label === "Profile") : links;
+
   return (
-    <section className="dashboard-shell">
-      <aside className="dashboard-shell__sidebar">
-        <p className="eyebrow">Customer Workspace</p>
-        <h2>Your medicine account</h2>
-        <p>Upload prescriptions, manage profile, and track every order from one place.</p>
-
-        <nav className="sidebar-nav">
-          {ACCOUNT_NAV_LINKS.map((link) => (
-            <NavLink key={link.to} to={link.to}>
-              {link.label}
-            </NavLink>
-          ))}
-          <NavLink to="/app/cart">Cart</NavLink>
-          <NavLink to="/app/account/checkout">Checkout</NavLink>
-        </nav>
+    <div className="split-layout">
+      <aside className="side-nav">
+        <h2>Account</h2>
+        {visibleLinks.map((link) => (
+          <NavLink key={link.to} to={link.to}>
+            {link.label}
+          </NavLink>
+        ))}
       </aside>
-
-      <div className="dashboard-shell__content">
+      <section className="split-content">
         <Outlet />
-      </div>
-    </section>
+      </section>
+    </div>
   );
 }
